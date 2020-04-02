@@ -3,10 +3,7 @@ using CompleteWeatherApp.Models;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+using Xamarin.Essentials;
 using Xamarin.Forms;
 using Xamarin.Forms.Xaml;
 
@@ -15,53 +12,79 @@ namespace CompleteWeatherApp.Views
     [XamlCompilation(XamlCompilationOptions.Compile)]
     public partial class CurrentWeatherPage : ContentPage
     {
+        const string Url = "http://api.openweathermap.org/data/2.5/{0}?lat={1}&lon={2}&units=metric&appid=b95b8a4cd75481aa3bdc09a572e816cc";
         public CurrentWeatherPage()
         {
             InitializeComponent();
+
             GetWeatherInfo();
         }
 
-        private string Location = "Ireland";
-
         private async void GetWeatherInfo()
         {
-            var url = $"http://api.openweathermap.org/data/2.5/weather?q={Location}&appid=b6907d289e10d714a6e88b30761fae22&units=metric";
-
-            var result = await ApiCaller.Get(url);
-
-            if(result.Successful)
+            
+            var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+            if (status != PermissionStatus.Granted)
             {
-                try
+                status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+                if (status != Xamarin.Essentials.PermissionStatus.Granted)
                 {
-                    var weatherInfo = JsonConvert.DeserializeObject<WeatherInfo>(result.Response);
-                    descriptionTxt.Text = weatherInfo.weather[0].description.ToUpper();
-                    iconImg.Source = $"w{weatherInfo.weather[0].icon}";
-                    cityTxt.Text = weatherInfo.name.ToUpper();
-                    temperatureTxt.Text = weatherInfo.main.temp.ToString("0");
-                    humidityTxt.Text = $"{weatherInfo.main.humidity}%";
-                    pressureTxt.Text = $"{weatherInfo.main.pressure} hpa";
-                    windTxt.Text = $"{weatherInfo.wind.speed} m/s";
-                    cloudinessTxt.Text = $"{weatherInfo.clouds.all}%";
-
-                    var dt = new DateTime().ToUniversalTime().AddSeconds(weatherInfo.dt);
-                    dateTxt.Text = dt.ToString("dddd, MMM dd").ToUpper();
-
-                    GetForecast();
-                }
-                catch (Exception ex)
-                {
-                    await DisplayAlert("Weather Info", ex.Message, "OK");
+                    await DisplayAlert("Weather Info", "Coudn't access to openweathermap.org to get the weather information ", "OK");
+                    return;
                 }
             }
-            else
+            try
             {
-                await DisplayAlert("Weather Info", "No weather information found", "OK");
+                Location position = await Geolocation.GetLastKnownLocationAsync();
+                if (position == null)
+                {
+                    position = await Geolocation.GetLocationAsync(new GeolocationRequest
+                    {
+                        DesiredAccuracy = GeolocationAccuracy.Medium,
+                        Timeout = TimeSpan.FromMinutes(10)
+                    });
+                }
+                var url = string.Format(Url, "weather", position.Latitude, position.Longitude);
+
+                var result = await ApiCaller.Get(url);
+                if(result.Successful)
+                {
+                    try
+                    {
+                        var weatherInfo = JsonConvert.DeserializeObject<WeatherInfo>(result.Response);
+                        descriptionTxt.Text = weatherInfo.weather[0].description.ToUpper();
+                        iconImg.Source = $"w{weatherInfo.weather[0].icon}";
+                        cityTxt.Text = weatherInfo.name.ToUpper();
+                        temperatureTxt.Text = weatherInfo.main.temp.ToString("0");
+                        humidityTxt.Text = $"{weatherInfo.main.humidity}%";
+                        pressureTxt.Text = $"{weatherInfo.main.pressure} hpa";
+                        windTxt.Text = $"{weatherInfo.wind.speed} m/s";
+                        cloudinessTxt.Text = $"{weatherInfo.clouds.all}%";
+
+                        var dt = new DateTime().ToUniversalTime().AddSeconds(weatherInfo.dt);
+                        dateTxt.Text = dt.ToString("dddd, MMM dd").ToUpper();
+
+                        GetForecast(position.Latitude, position.Longitude);
+                    }
+                    catch (Exception ex)
+                    {
+                        await DisplayAlert("Weather Info", ex.Message, "OK");
+                    }
+                }
+                else
+                {
+                    await DisplayAlert("Weather Info", "No weather information found", "OK");
+                }
+            }
+            catch(Exception ex)
+            {
+                await DisplayAlert("Weather Info", ex.Message + " ... enable your location and try again", "OK");
             }
         }
 
-        private async void GetForecast()
+        private async void GetForecast(double latitude, double longitude)
         {
-            var url = $"http://api.openweathermap.org/data/2.5/forecast?q={Location}&appid=b6907d289e10d714a6e88b30761fae22&units=metric";
+            var url = string.Format(Url, "forecast", latitude, longitude);
             var result = await ApiCaller.Get(url);
 
             if (result.Successful)
@@ -69,7 +92,6 @@ namespace CompleteWeatherApp.Views
                 try
                 {
                     var forcastInfo = JsonConvert.DeserializeObject<ForecastInfo>(result.Response);
-
                     List<List> allList = new List<List>();
 
                     foreach (var list in forcastInfo.list)
@@ -111,6 +133,11 @@ namespace CompleteWeatherApp.Views
             {
                 await DisplayAlert("Weather Info", "No forecast information found", "OK");
             }
+        }
+
+        private void ImageButton_Clicked(object sender, EventArgs e)
+        {
+            GetWeatherInfo();
         }
     }
 }
